@@ -75,13 +75,6 @@ app.post("/api/users/:_id/exercises", async (req, res) => {
     const userId = req.params._id;
     const { description, duration, date } = req.body;
 
-    const isDateValid = Boolean(new Date(date).toDateString());
-
-    if (!isDateValid) {
-      res.status(400).json({ error: "Invalid date" });
-      return;
-    }
-
     const user = await User.findById(userId);
 
     if (!user) {
@@ -91,7 +84,6 @@ app.post("/api/users/:_id/exercises", async (req, res) => {
 
     const exercise = new Exercise({
       username: user.username,
-      _id: user._id,
       description,
       duration,
       date: date ? new Date(date).toDateString() : new Date().toDateString(),
@@ -100,8 +92,8 @@ app.post("/api/users/:_id/exercises", async (req, res) => {
     await exercise.save();
 
     return res.json({
-      _id: user._id,
       username: user.username,
+      _id: user._id,
       description: exercise.description,
       duration: exercise.duration,
       date: exercise.date,
@@ -114,15 +106,46 @@ app.post("/api/users/:_id/exercises", async (req, res) => {
 
 app.get("/api/users/:_id/logs", async (req, res) => {
   try {
-    const _id = req.params._id;
+    const _id = req.params._id; // Extract user ID from route parameters
+    const { from, to, limit } = req.query; // Extract query parameters
 
-    const results = await Exercise.find({ _id: _id });
+    console.log("Query Parameters:", { from, to, limit });
 
-    console.log("results: ", results);
+    // Validate the user ID exists
+    const user = await User.findById(_id);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
 
-    return res.json({ log: results, count: results.length });
+    // Build the query for exercises
+    let query = { _id };
+
+    // Add date filtering conditions
+    if (from || to) {
+      query.date = {};
+      if (from) query.date.$gte = new Date(from); // Convert 'from' to Date and add to query
+      if (to) query.date.$lte = new Date(to); // Convert 'to' to Date and add to query
+    }
+
+    console.log("MongoDB Query:", query);
+
+    // Fetch logs from the database
+    let logs = await Exercise.find({ username: user.username })
+      .sort({ date: 1 }) // Sort logs by date
+      .limit(limit ? parseInt(limit) : undefined); // Apply limit if provided
+
+    // Respond with the logs and count
+    return res.json({
+      username: user.username,
+      count: logs.length,
+      log: logs.map((log) => ({
+        description: log.description,
+        duration: log.duration,
+        date: log.date,
+      })),
+    });
   } catch (error) {
-    console.error(error);
+    console.error("Error:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
